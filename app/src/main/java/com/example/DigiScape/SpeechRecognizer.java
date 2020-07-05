@@ -28,6 +28,7 @@ import android.media.MediaRecorder.AudioSource;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import com.example.DigiScape.FFT;
 
 import org.kaldi.KaldiRecognizer;
 import org.kaldi.Model;
@@ -53,8 +54,14 @@ public class SpeechRecognizer {
     private final AudioRecord recorder;
 
     private Thread recognizerThread;
-    private double maxAmplitude;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    //---------------------------------Custom variables-----------------------------------------
+    private double maxAmplitude;                                //Variable for dealing with Amplitude Measurements
+    double[] real_component_freq = new double[1024];            //Variable for dealing with Frequency Measurements
+    double[] imaginary_component_freq = new double[1024];       //Variable for dealing with Frequency Measurements
+    double[] power_spectrum = new double[512];                   //Variable for dealing with Frequency Measurements
+    //-------------------------------------------------------------------------------------------
 
     private final Collection<RecognitionListener> listeners = new HashSet<RecognitionListener>();
 
@@ -225,12 +232,30 @@ public class SpeechRecognizer {
                     && ((timeoutSamples == NO_TIMEOUT) || (remainingSamples > 0))) {
                 int nread = recorder.read(buffer, 0, buffer.length);
 
-                //Added Amplitude Method
+                //--------------Custom Code Snippet for Calculating Amplitude--------------------
                 maxAmplitude = 0;
-                for(int i=0; i<buffer.length; i++){
-                    if(Math.abs(buffer[i])>=maxAmplitude){maxAmplitude=Math.abs(buffer[i]);}
+                int i;
+                for(i=0; i<buffer.length; i++)
+                    if(Math.abs(buffer[i])>=maxAmplitude)
+                        maxAmplitude=Math.abs(buffer[i]);
+                //-------------------------------------------------------------------------------
+
+                //--------------Custom Code Snippet for Calculating Frequency--------------------
+
+                for(i=0; i<1024; i++) {
+                    real_component_freq[i] = (double) Math.abs(buffer[i]);
+                    imaginary_component_freq[i]=0;
                 }
 
+                FFT fft = new FFT(1024);
+                int iterations = 50;
+                for(i=0; i<iterations; i++)
+                    fft.fft(real_component_freq, imaginary_component_freq);
+
+                for(i=0; i<512; i++)
+                    power_spectrum[i]=Math.pow(real_component_freq[i], 2) + Math.pow(imaginary_component_freq[i], 2);
+
+                //-------------------------------------------------------------------------------
 
                 if (nread < 0) {
                     throw new RuntimeException("error reading audio buffer");
@@ -275,7 +300,17 @@ public class SpeechRecognizer {
         private final boolean finalResult;
 
         ResultEvent(String hypothesis, boolean finalResult) {
-            hypothesis+=("\nLOUDNESS: "+maxAmplitude+"\n");
+
+            //-------------Adding Amplitude and Frequency results to the hypothesis-------------
+            hypothesis+=("\nAmplitude: "+maxAmplitude+"\n");
+
+            hypothesis+=("\nPower Spectral Density:\n");
+            for(int i=0; i<15; i++)
+                hypothesis+=(power_spectrum[i]+", ");
+            hypothesis+="\n";
+
+            //----------------------------------------------------------------------------------
+
             this.hypothesis = hypothesis;
             this.finalResult = finalResult;
         }
