@@ -259,7 +259,7 @@ public class MainActivity extends Activity implements
             setUiState(STATE_DONE);
             recognizer.cancel();
             recognizer = null;
-            resultView.setText("");
+            //resultView.setText("");
         } else {
             setUiState(STATE_MIC);
             try {

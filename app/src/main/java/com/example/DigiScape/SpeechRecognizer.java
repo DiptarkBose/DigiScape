@@ -61,6 +61,7 @@ public class SpeechRecognizer {
     private double maxAmplitude;                                //Variable for dealing with Amplitude Measurements
     double[] mfccFeeder = new double[1024];                     //Variable for dealing with MFCC Measurements
     double[][] mfccFeatures = new double[3][20];                //Variable for dealing with MFCC Measurements
+    int mfccAvg;
     //-------------------------------------------------------------------------------------------
 
     private final Collection<RecognitionListener> listeners = new HashSet<RecognitionListener>();
@@ -294,11 +295,16 @@ public class SpeechRecognizer {
         ResultEvent(String hypothesis, boolean finalResult) {
 
             //-------------Adding Amplitude and Frequency results to the hypothesis-------------
+            mfccAvg=0;
             hypothesis+=("\nAmplitude: "+maxAmplitude+"\n");
             hypothesis+="\nMFCC Features: [";
-            for (int j = 1; j <=14; j++)
-                hypothesis += Math.round(mfccFeatures[1][j])+" ";
+            for (int j = 1; j <=12; j++) {
+                hypothesis += Math.round(mfccFeatures[1][j]) + " ";
+                mfccAvg+=Math.round(mfccFeatures[1][j]);
+            }
+            mfccAvg=mfccAvg/2;
             hypothesis+="]\n";
+            hypothesis+=("MFCC Average: "+mfccAvg+"\n");
             //----------------------------------------------------------------------------------
             this.hypothesis = hypothesis;
             this.finalResult = finalResult;
