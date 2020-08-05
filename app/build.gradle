@@ -19,4 +19,5 @@ dependencies {
     implementation project(':aars')
     implementation project(':models')
     implementation 'androidx.appcompat:appcompat:1.1.0'
+    implementation 'com.github.AnyChart:AnyChart-Android:1.1.2'
 }

@@ -19,11 +19,14 @@ import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.media.MediaRecorder;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import android.os.Handler;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.View;
@@ -34,6 +37,7 @@ import org.kaldi.Assets;
 import org.kaldi.KaldiRecognizer;
 import org.kaldi.Model;
 import org.kaldi.RecognitionListener;
+
 import com.example.DigiScape.SpeechRecognizer;
 import org.kaldi.Vosk;
 import com.example.DigiScape.R;
@@ -42,7 +46,15 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Random;
+import java.util.TreeMap;
 
 public class MainActivity extends Activity implements
         RecognitionListener {
@@ -64,6 +76,7 @@ public class MainActivity extends Activity implements
     private Model model;
     private SpeechRecognizer recognizer;
     TextView resultView;
+    TextView mfccDistribution;
 
     @Override
     public void onCreate(Bundle state) {
@@ -72,9 +85,11 @@ public class MainActivity extends Activity implements
 
         // Setup layout
         resultView = findViewById(R.id.result_text);
+        mfccDistribution = findViewById(R.id.mfcc_distribution);
         setUiState(STATE_START);
 
         findViewById(R.id.recognize_mic).setOnClickListener(new View.OnClickListener() {
+            @RequiresApi(api = Build.VERSION_CODES.N)
             @Override
             public void onClick(View view) {
                 recognizeMicrophone();
@@ -253,16 +268,39 @@ public class MainActivity extends Activity implements
         findViewById(R.id.recognize_mic).setEnabled(false);
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.N)
     public void recognizeMicrophone() {
 
         if (recognizer != null) {
             setUiState(STATE_DONE);
+            List<Integer> mfccAvgList = recognizer.mfccAvgList;
+            final Map<Integer, Integer> mfccAvgOccurrence = new HashMap<>();
+            for(int i=0; i<mfccAvgList.size(); i++)
+                mfccAvgOccurrence.put(mfccAvgList.get(i), mfccAvgOccurrence.getOrDefault(mfccAvgList.get(i), 0)+1);
+            PriorityQueue<Integer> pq = new PriorityQueue<>(new Comparator<Integer>() {
+                @Override
+                public int compare(Integer x, Integer y) {
+                    return mfccAvgOccurrence.get(y) - mfccAvgOccurrence.get(x);
+                }
+            });
+            for(Map.Entry<Integer, Integer> e : mfccAvgOccurrence.entrySet())
+                pq.add(e.getKey());
+            mfccDistribution.setText("");
+            String distributionResult="MFCC Distribution Results:\n";
+            Log.d("PQ", String.valueOf(pq));
+            while(!pq.isEmpty())
+            {
+                Integer mfccVal=pq.poll();
+                double percentage = (100*(double)mfccAvgOccurrence.get(mfccVal))/(double)mfccAvgList.size();
+                distributionResult+=(mfccVal+"   :    "+percentage+"%\n");
+            }
+            mfccDistribution.setText(distributionResult);
             recognizer.cancel();
             recognizer = null;
-            //resultView.setText("");
         } else {
             setUiState(STATE_MIC);
             try {
+                mfccDistribution.setText("");
                 recognizer = new SpeechRecognizer(model);
                 recognizer.addListener(this);
                 recognizer.startListening();

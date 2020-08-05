@@ -19,8 +19,10 @@ import static java.lang.String.format;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 
 import android.media.AudioFormat;
 import android.media.AudioRecord;
@@ -58,10 +60,11 @@ public class SpeechRecognizer {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     //---------------------------------Custom variables-----------------------------------------
-    private double maxAmplitude;                                //Variable for dealing with Amplitude Measurements
-    double[] mfccFeeder = new double[1024];                     //Variable for dealing with MFCC Measurements
-    double[][] mfccFeatures = new double[3][20];                //Variable for dealing with MFCC Measurements
-    int mfccAvg;
+    public double maxAmplitude;                                        //Variable for dealing with Amplitude Measurements
+    public double[] mfccFeeder = new double[1024];                     //Variable for dealing with MFCC Measurements
+    public double[][] mfccFeatures = new double[3][20];                //Variable for dealing with MFCC Measurements
+    public int mfccAvg;
+    public List<Integer> mfccAvgList = new ArrayList<>();
     //-------------------------------------------------------------------------------------------
 
     private final Collection<RecognitionListener> listeners = new HashSet<RecognitionListener>();
@@ -302,9 +305,10 @@ public class SpeechRecognizer {
                 hypothesis += Math.round(mfccFeatures[1][j]) + " ";
                 mfccAvg+=Math.round(mfccFeatures[1][j]);
             }
-            mfccAvg=mfccAvg/2;
+            mfccAvg=mfccAvg/12;
             hypothesis+="]\n";
             hypothesis+=("MFCC Average: "+mfccAvg+"\n");
+            mfccAvgList.add(mfccAvg);
             //----------------------------------------------------------------------------------
             this.hypothesis = hypothesis;
             this.finalResult = finalResult;
