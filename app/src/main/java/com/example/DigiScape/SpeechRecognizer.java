@@ -262,14 +262,14 @@ public class SpeechRecognizer {
                 //--------------Custom Code Snippet for Calculating Spectral Flatness------------
                 //Provides a measure of the peakiness of the average spectrum.
                 fft.transform(curFrame, null);
-                double num = 1;
+                double geometricMean = 1;
+                double arithmeticMean = 1;
                 for(int band = 0; band < 1024; band++)
                 {
-                    //convert back to linear power
-                    double p = Math.pow(10,curFrame[band]/10);
-                    num += Math.log(p)/1024;
+                    geometricMean += Math.log(curFrame[band])/1024;
+                    arithmeticMean+=curFrame[band]/1024;
                 }
-                avgSpecFlatness = Math.exp(num);
+                avgSpecFlatness = Math.exp(geometricMean)/arithmeticMean;
                 //-------------------------------------------------------------------------------
                 if (nread < 0) {
                     throw new RuntimeException("error reading audio buffer");
