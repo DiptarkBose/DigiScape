@@ -65,6 +65,8 @@ public class SpeechRecognizer {
     public double[][] mfccFeatures = new double[3][20];                //Variable for dealing with MFCC Measurements
     public int mfccAvg;
     public List<Integer> mfccAvgList = new ArrayList<>();
+    public FFT fft = new FFT(FFT.FFT_NORMALIZED_POWER, 1024, FFT.WND_HANNING);
+    public double avgSpecFlatness;
     //-------------------------------------------------------------------------------------------
 
     private final Collection<RecognitionListener> listeners = new HashSet<RecognitionListener>();
@@ -239,9 +241,13 @@ public class SpeechRecognizer {
                 //--------------Custom Code Snippet for Calculating Amplitude--------------------
                 maxAmplitude = 0;
                 int i;
-                for(i=0; i<buffer.length; i++)
-                    if(Math.abs(buffer[i])>=maxAmplitude)
-                        maxAmplitude=Math.abs(buffer[i]);
+                double[] curFrame = new double[1024];
+                for(i=0; i<buffer.length; i++) {
+                    if (Math.abs(buffer[i]) >= maxAmplitude)
+                        maxAmplitude = Math.abs(buffer[i]);
+                    if(i<1024)
+                        curFrame[i]=buffer[i];
+                }
                 //-------------------------------------------------------------------------------
                 //--------------Custom Code Snippet for Calculating MFCC-------------------------
                 MFCC mfcc = new MFCC(sampleRate);
@@ -252,6 +258,18 @@ public class SpeechRecognizer {
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
+                //-------------------------------------------------------------------------------
+                //--------------Custom Code Snippet for Calculating Spectral Flatness------------
+                //Provides a measure of the peakiness of the average spectrum.
+                fft.transform(curFrame, null);
+                double num = 1;
+                for(int band = 0; band < 1024; band++)
+                {
+                    //convert back to linear power
+                    double p = Math.pow(10,curFrame[band]/10);
+                    num += Math.log(p)/1024;
+                }
+                avgSpecFlatness = Math.exp(num);
                 //-------------------------------------------------------------------------------
                 if (nread < 0) {
                     throw new RuntimeException("error reading audio buffer");
@@ -297,7 +315,7 @@ public class SpeechRecognizer {
 
         ResultEvent(String hypothesis, boolean finalResult) {
 
-            //-------------Adding Amplitude and Frequency results to the hypothesis-------------
+            //----------------------Adding results to the hypothesis---------------------------
             mfccAvg=0;
             hypothesis+=("\nAmplitude: "+maxAmplitude+"\n");
             hypothesis+="\nMFCC Features: [";
@@ -309,6 +327,7 @@ public class SpeechRecognizer {
             hypothesis+="]\n";
             hypothesis+=("MFCC Average: "+mfccAvg+"\n");
             mfccAvgList.add(mfccAvg);
+            hypothesis+="Spectral Flatness: " +avgSpecFlatness+" \n";
             //----------------------------------------------------------------------------------
             this.hypothesis = hypothesis;
             this.finalResult = finalResult;

@@ -287,7 +287,7 @@ public class MainActivity extends Activity implements
                 pq.add(e.getKey());
             mfccDistribution.setText("");
             String distributionResult="MFCC Distribution Results:\n";
-            Log.d("PQ", String.valueOf(pq));
+            //Log.d("PQ", String.valueOf(pq));
             while(!pq.isEmpty())
             {
                 Integer mfccVal=pq.poll();
