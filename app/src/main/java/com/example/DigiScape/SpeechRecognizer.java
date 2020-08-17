@@ -63,10 +63,12 @@ public class SpeechRecognizer {
     public double maxAmplitude;                                        //Variable for dealing with Amplitude Measurements
     public double[] mfccFeeder = new double[1024];                     //Variable for dealing with MFCC Measurements
     public double[][] mfccFeatures = new double[3][20];                //Variable for dealing with MFCC Measurements
-    public int mfccAvg;
+    public double mfccAvg;
     public List<Integer> mfccAvgList = new ArrayList<>();
     public FFT fft = new FFT(FFT.FFT_NORMALIZED_POWER, 1024, FFT.WND_HANNING);
     public double avgSpecFlatness;
+    public float rms=0f;
+    public double avgSpecCentroid;
     //-------------------------------------------------------------------------------------------
 
     private final Collection<RecognitionListener> listeners = new HashSet<RecognitionListener>();
@@ -238,16 +240,19 @@ public class SpeechRecognizer {
                     && ((timeoutSamples == NO_TIMEOUT) || (remainingSamples > 0))) {
                 int nread = recorder.read(buffer, 0, buffer.length);
 
-                //--------------Custom Code Snippet for Calculating Amplitude--------------------
+                //--------------Custom Code Snippet for Calculating Amplitude & RMS---------------
                 maxAmplitude = 0;
                 int i;
                 double[] curFrame = new double[1024];
                 for(i=0; i<buffer.length; i++) {
+                    rms+=(buffer[i]*buffer[i]);
                     if (Math.abs(buffer[i]) >= maxAmplitude)
                         maxAmplitude = Math.abs(buffer[i]);
                     if(i<1024)
                         curFrame[i]=buffer[i];
                 }
+                rms = (float)Math.sqrt(rms / buffer.length);
+                rms=(float)Math.round(rms*10000)/10000;
                 //-------------------------------------------------------------------------------
                 //--------------Custom Code Snippet for Calculating MFCC-------------------------
                 MFCC mfcc = new MFCC(sampleRate);
@@ -270,6 +275,22 @@ public class SpeechRecognizer {
                     arithmeticMean+=curFrame[band]/1024;
                 }
                 avgSpecFlatness = Math.exp(geometricMean)/arithmeticMean;
+                avgSpecFlatness=(double)Math.round(avgSpecFlatness*10000)/10000;
+                //-------------------------------------------------------------------------------
+                //--------------Custom Code Snippet for Calculating Spectral Centroid------------
+                //Provides a measure of the average spectral center of mass of a chunk's frames. Taken from https://www.ee.columbia.edu/~ronw/code/MEAPsoft/doc/html/AvgSpecCentroid_8java-source.html
+                double num = 0;
+                double den = 0;
+                for(int band = 0; band < 1024; band++)
+                {
+                    double freqCenter = band*(8000)/(1023);
+                    //Convert back to linear power
+                    double p = Math.pow(10,curFrame[band]/10);
+                    num += freqCenter*p;
+                    den += p;
+                }
+                avgSpecCentroid += num/den;
+                avgSpecCentroid=(double)Math.round(avgSpecCentroid*10000)/10000;
                 //-------------------------------------------------------------------------------
                 if (nread < 0) {
                     throw new RuntimeException("error reading audio buffer");
@@ -318,16 +339,22 @@ public class SpeechRecognizer {
             //----------------------Adding results to the hypothesis---------------------------
             mfccAvg=0;
             hypothesis+=("\nAmplitude: "+maxAmplitude+"\n");
-            hypothesis+="\nMFCC Features: [";
-            for (int j = 1; j <=12; j++) {
-                hypothesis += Math.round(mfccFeatures[1][j]) + " ";
-                mfccAvg+=Math.round(mfccFeatures[1][j]);
+            hypothesis+="\nMFCC Features: \n";
+            for(int i=0; i<mfccFeatures.length; i++) {
+                hypothesis+="[";
+                for (int j = 1; j <= 12; j++) {
+                    hypothesis += ((double)Math.round(mfccFeatures[i][j]*100)/100) + " ";
+                    mfccAvg += mfccFeatures[i][j];
+                }
+                hypothesis+="]\n";
             }
-            mfccAvg=mfccAvg/12;
-            hypothesis+="]\n";
+            mfccAvg=mfccAvg/36;
+            mfccAvg = (double)Math.round(mfccAvg*100)/100;
             hypothesis+=("MFCC Average: "+mfccAvg+"\n");
-            mfccAvgList.add(mfccAvg);
+            mfccAvgList.add((int)mfccAvg);
             hypothesis+="Spectral Flatness: " +avgSpecFlatness+" \n";
+            hypothesis+="Spectral Centroid: " +avgSpecCentroid+" \n";
+            hypothesis+="Amplitude RMS: " +rms+" \n";
             //----------------------------------------------------------------------------------
             this.hypothesis = hypothesis;
             this.finalResult = finalResult;

@@ -292,6 +292,7 @@ public class MainActivity extends Activity implements
             {
                 Integer mfccVal=pq.poll();
                 double percentage = (100*(double)mfccAvgOccurrence.get(mfccVal))/(double)mfccAvgList.size();
+                percentage=(double)Math.round(percentage*100)/100;
                 distributionResult+=(mfccVal+"   :    "+percentage+"%\n");
             }
             mfccDistribution.setText(distributionResult);
