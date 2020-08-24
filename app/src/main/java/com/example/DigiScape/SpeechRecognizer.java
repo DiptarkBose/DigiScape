@@ -69,6 +69,8 @@ public class SpeechRecognizer {
     public double avgSpecFlatness;
     public float rms=0f;
     public double avgSpecCentroid;
+    public int numCrossing = 0;
+    public float frequency;
     //-------------------------------------------------------------------------------------------
 
     private final Collection<RecognitionListener> listeners = new HashSet<RecognitionListener>();
@@ -240,24 +242,29 @@ public class SpeechRecognizer {
                     && ((timeoutSamples == NO_TIMEOUT) || (remainingSamples > 0))) {
                 int nread = recorder.read(buffer, 0, buffer.length);
 
-                //--------------Custom Code Snippet for Calculating Amplitude & RMS---------------
-                maxAmplitude = 0;
+                //---------Custom Code Snippet for Calculating Amplitude, RMS, and ZCR--------
+                maxAmplitude = 0; numCrossing=0;
                 int i;
                 double[] curFrame = new double[1024];
                 for(i=0; i<buffer.length; i++) {
+                    if (i<bufferSize-1 && ((buffer[i] > 0 && buffer[i+1] <= 0) || (buffer[i] < 0 && buffer[i+1] >= 0)))
+                        numCrossing++;
                     rms+=(buffer[i]*buffer[i]);
                     if (Math.abs(buffer[i]) >= maxAmplitude)
                         maxAmplitude = Math.abs(buffer[i]);
-                    if(i<1024)
-                        curFrame[i]=buffer[i];
+                    if(i<1024) {
+                        curFrame[i] = buffer[i];
+                        mfccFeeder[i] = buffer[i];
+                    }
                 }
+                float numSecondsRecorded = (float)bufferSize/(float)sampleRate;
+                float numCycles = numCrossing/2;
+                frequency = numCycles/numSecondsRecorded;
                 rms = (float)Math.sqrt(rms / buffer.length);
                 rms=(float)Math.round(rms*10000)/10000;
                 //-------------------------------------------------------------------------------
                 //--------------Custom Code Snippet for Calculating MFCC-------------------------
                 MFCC mfcc = new MFCC(sampleRate);
-                for(i=0; i<1024; i++)
-                    mfccFeeder[i]=buffer[i];
                 try {
                     mfccFeatures = mfcc.process(mfccFeeder);
                 } catch (IOException e) {
@@ -272,7 +279,7 @@ public class SpeechRecognizer {
                 for(int band = 0; band < 1024; band++)
                 {
                     geometricMean += Math.log(curFrame[band])/1024;
-                    arithmeticMean+=curFrame[band]/1024;
+                    arithmeticMean += curFrame[band]/1024;
                 }
                 avgSpecFlatness = Math.exp(geometricMean)/arithmeticMean;
                 avgSpecFlatness=(double)Math.round(avgSpecFlatness*10000)/10000;
@@ -283,7 +290,7 @@ public class SpeechRecognizer {
                 double den = 0;
                 for(int band = 0; band < 1024; band++)
                 {
-                    double freqCenter = band*(8000)/(1023);
+                    double freqCenter = band*(8000)/(1024);
                     //Convert back to linear power
                     double p = Math.pow(10,curFrame[band]/10);
                     num += freqCenter*p;
@@ -355,6 +362,8 @@ public class SpeechRecognizer {
             hypothesis+="Spectral Flatness: " +avgSpecFlatness+" \n";
             hypothesis+="Spectral Centroid: " +avgSpecCentroid+" \n";
             hypothesis+="Amplitude RMS: " +rms+" \n";
+            hypothesis+="Zero-Crossings: " +numCrossing+" \n";
+            hypothesis+="Frequency: " +frequency+" Hz\n";
             //----------------------------------------------------------------------------------
             this.hypothesis = hypothesis;
             this.finalResult = finalResult;
