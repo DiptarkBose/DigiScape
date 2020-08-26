@@ -68,9 +68,13 @@ public class SpeechRecognizer {
     public FFT fft = new FFT(FFT.FFT_NORMALIZED_POWER, 1024, FFT.WND_HANNING);
     public double avgSpecFlatness;
     public float rms=0f;
-    public double avgSpecCentroid;
+    public double avgSpecCentroid=0;
     public int numCrossing = 0;
-    public float frequency;
+    public float frequency=0;
+    public double frequencySC=0;
+    public double spectralRolloff=0;
+    public double compactness=0;
+    public double variability=0;
     //-------------------------------------------------------------------------------------------
 
     private final Collection<RecognitionListener> listeners = new HashSet<RecognitionListener>();
@@ -246,12 +250,21 @@ public class SpeechRecognizer {
                 maxAmplitude = 0; numCrossing=0;
                 int i;
                 double[] curFrame = new double[1024];
+                double[] im = new double[1024];
                 for(i=0; i<buffer.length; i++) {
+
+                    //Zero Crossing Calculations
                     if (i<bufferSize-1 && ((buffer[i] > 0 && buffer[i+1] <= 0) || (buffer[i] < 0 && buffer[i+1] >= 0)))
                         numCrossing++;
+
+                    //RMS Calculations
                     rms+=(buffer[i]*buffer[i]);
+
+                    //Max Amplitude Calculation
                     if (Math.abs(buffer[i]) >= maxAmplitude)
                         maxAmplitude = Math.abs(buffer[i]);
+
+                    //Creating Feeders for FFT and MFCC
                     if(i<1024) {
                         curFrame[i] = buffer[i];
                         mfccFeeder[i] = buffer[i];
@@ -273,31 +286,76 @@ public class SpeechRecognizer {
                 //-------------------------------------------------------------------------------
                 //--------------Custom Code Snippet for Calculating Spectral Flatness------------
                 //Provides a measure of the peakiness of the average spectrum.
-                fft.transform(curFrame, null);
-                double geometricMean = 1;
-                double arithmeticMean = 1;
+                double[] power_spectrum = new double[1024];
+                double[] magnitude_spectrum = new double[1024];
+                fft.transform(curFrame, im);
+
+                double geometricMean = 1;                   //Variable for Spectral Flatness
+                double arithmeticMean = 1;                  //Variable for Spectral Flatness
+                double total=0.0;                             //Variable for Spectral Rolloff
+                double average = 0;                         //For spectral variability
                 for(int band = 0; band < 1024; band++)
                 {
                     geometricMean += Math.log(curFrame[band])/1024;
                     arithmeticMean += curFrame[band]/1024;
+                    power_spectrum[band]=Math.pow(curFrame[band], 2)+Math.pow(im[band], 2);     //Calculating Power Spectrum
+                    magnitude_spectrum[band]=power_spectrum[band]/1024;                         //Calculating Magnitude Spectrum
+                    total+=power_spectrum[band];
                 }
+                average=(total/(1024*1024));
+                //Calculating Rolloff (https://github.com/dmcennis/jMir/blob/master/jMIR_2_4_developer/jAudio/src/jAudioFeatureExtractor/AudioFeatures/SpectralRolloffPoint.java)
+                double cutoff = 0.85;
+                double threshold = total * cutoff;
+                compactness=0.0;
+                total = 0.0;
+                int point = 0;
+                for (int bin = 0; bin < 1024; bin++) {
+                    total += power_spectrum[bin];
+                    if (total >= threshold) {
+                        point = bin;
+                        bin = power_spectrum.length;
+                    }
+                    //Calculating Compactness
+                    if(bin>0 && bin<1023)
+                    {
+                        if ((magnitude_spectrum[bin - 1] > 0.0) && (magnitude_spectrum[bin] > 0.0) && (magnitude_spectrum[bin + 1] > 0.0))
+                        {
+                            compactness += Math.abs(20.0 * Math.log(magnitude_spectrum[bin]) - 20.0 * (Math.log(magnitude_spectrum[bin - 1]) + Math.log(magnitude_spectrum[bin]) + Math.log(magnitude_spectrum[bin + 1])) / 3.0);
+                        }
+                    }
+                }
+                compactness=(double)Math.round(compactness*100)/100;
+                spectralRolloff = ((double) point) / 1024;
                 avgSpecFlatness = Math.exp(geometricMean)/arithmeticMean;
                 avgSpecFlatness=(double)Math.round(avgSpecFlatness*10000)/10000;
                 //-------------------------------------------------------------------------------
-                //--------------Custom Code Snippet for Calculating Spectral Centroid------------
-                //Provides a measure of the average spectral center of mass of a chunk's frames. Taken from https://www.ee.columbia.edu/~ronw/code/MEAPsoft/doc/html/AvgSpecCentroid_8java-source.html
-                double num = 0;
-                double den = 0;
-                for(int band = 0; band < 1024; band++)
+                //Spectral Variability
+                double sum = 0.0;
+                for (i = 0; i < magnitude_spectrum.length; i++)
                 {
-                    double freqCenter = band*(8000)/(1024);
-                    //Convert back to linear power
-                    double p = Math.pow(10,curFrame[band]/10);
-                    num += freqCenter*p;
-                    den += p;
+                    double diff = ((double) magnitude_spectrum[i]) - average;
+                    sum = sum + diff * diff;
                 }
-                avgSpecCentroid += num/den;
-                avgSpecCentroid=(double)Math.round(avgSpecCentroid*10000)/10000;
+                //This is a measure of the standard deviation of a signal's magnitude spectrum.
+                variability= Math.sqrt(sum / ((double) (magnitude_spectrum.length - 1)));
+                variability=(double) Math.round(variability*1000)/1000;
+                //--------------Custom Code Snippet for Calculating Spectral Centroid------------
+                //Provides a measure of the average spectral center of mass of a chunk's frames.
+                total = 0.0;
+                double weighted_total = 0.0;
+                for (int bin = 0; bin < power_spectrum.length; bin++)
+                {
+                    weighted_total += bin * power_spectrum[bin];
+                    total += power_spectrum[bin];
+                }
+                if(total != 0.0){
+                    avgSpecCentroid = weighted_total / total;
+                }else{
+                    avgSpecCentroid = 0.0;
+                }
+                avgSpecCentroid=(double)Math.round(avgSpecCentroid*1000)/1000;
+                frequencySC=(avgSpecCentroid / power_spectrum.length) * (sampleRate / 2.0);
+                frequencySC=(double)Math.round(frequencySC*1000)/1000;
                 //-------------------------------------------------------------------------------
                 if (nread < 0) {
                     throw new RuntimeException("error reading audio buffer");
@@ -363,7 +421,11 @@ public class SpeechRecognizer {
             hypothesis+="Spectral Centroid: " +avgSpecCentroid+" \n";
             hypothesis+="Amplitude RMS: " +rms+" \n";
             hypothesis+="Zero-Crossings: " +numCrossing+" \n";
-            hypothesis+="Frequency: " +frequency+" Hz\n";
+            hypothesis+="Strongest Frequency(ZCR): " +frequency+" Hz\n";
+            hypothesis+="Strongest Frequency(Centroid): " +frequencySC+" Hz\n";
+            hypothesis+="Spectral Rolloff Point: " +spectralRolloff+"\n";
+            hypothesis+="Compactness: " +compactness+"\n";
+            hypothesis+="Spectral Variability: " +variability+"\n";
             //----------------------------------------------------------------------------------
             this.hypothesis = hypothesis;
             this.finalResult = finalResult;
