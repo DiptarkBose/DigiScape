@@ -59,22 +59,22 @@ public class SpeechRecognizer {
     private Thread recognizerThread;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-    //---------------------------------Custom variables-----------------------------------------
-    public double maxAmplitude;                                        //Variable for dealing with Amplitude Measurements
-    public double[] mfccFeeder = new double[1024];                     //Variable for dealing with MFCC Measurements
-    public double[][] mfccFeatures = new double[3][20];                //Variable for dealing with MFCC Measurements
-    public double mfccAvg;
+    //-------------------------------Custom Global Variables-------------------------------------
+    public double maxAmplitude =0.0;
+    public double[] mfccFeeder = new double[4096];
+    public double[][] mfccFeatures = new double[15][20];
+    public double mfccAvg = 0.0;
     public List<Integer> mfccAvgList = new ArrayList<>();
-    public FFT fft = new FFT(FFT.FFT_NORMALIZED_POWER, 1024, FFT.WND_HANNING);
+    public FFT fft = new FFT(FFT.FFT_NORMALIZED_POWER, 4096, FFT.WND_HANNING);
     public double avgSpecFlatness;
-    public float rms=0f;
-    public double avgSpecCentroid=0;
+    public float rms = 0f;
+    public double avgSpecCentroid = 0.0;
     public int numCrossing = 0;
-    public float frequency=0;
-    public double frequencySC=0;
-    public double spectralRolloff=0;
-    public double compactness=0;
-    public double variability=0;
+    public float frequencyZCR = 0f;
+    public double frequencySC = 0.0;
+    public double spectralRolloff = 0.0;
+    public double compactness = 0.0;
+    public double variability = 0.0;
     //-------------------------------------------------------------------------------------------
 
     private final Collection<RecognitionListener> listeners = new HashSet<RecognitionListener>();
@@ -246,117 +246,138 @@ public class SpeechRecognizer {
                     && ((timeoutSamples == NO_TIMEOUT) || (remainingSamples > 0))) {
                 int nread = recorder.read(buffer, 0, buffer.length);
 
-                //---------Custom Code Snippet for Calculating Amplitude, RMS, and ZCR--------
+                /*
+                    START of Custom Calculations
+                    Lines 250 - 375
+                */
                 maxAmplitude = 0; numCrossing=0;
-                int i;
-                double[] curFrame = new double[1024];
-                double[] im = new double[1024];
-                for(i=0; i<buffer.length; i++) {
+                double[] curFrame = new double[4096];
+                double[] im = new double[4096];
+                double total = 0.0;
+                double average = 0.0;
+                for(int i=0; i<4096; i++) {
 
-                    //Zero Crossing Calculations
-                    if (i<bufferSize-1 && ((buffer[i] > 0 && buffer[i+1] <= 0) || (buffer[i] < 0 && buffer[i+1] >= 0)))
+                    //Zero Crossing Calculation
+                    if ((buffer[i] > 0 && buffer[i+1] <= 0) || (buffer[i] < 0 && buffer[i+1] >= 0))
                         numCrossing++;
 
-                    //RMS Calculations
-                    rms+=(buffer[i]*buffer[i]);
+                    //RMS Intermediate Calculation
+                    rms += (buffer[i] * buffer[i]);
 
                     //Max Amplitude Calculation
                     if (Math.abs(buffer[i]) >= maxAmplitude)
                         maxAmplitude = Math.abs(buffer[i]);
 
                     //Creating Feeders for FFT and MFCC
-                    if(i<1024) {
-                        curFrame[i] = buffer[i];
-                        mfccFeeder[i] = buffer[i];
-                    }
+                    curFrame[i] = buffer[i];
+                    mfccFeeder[i] = buffer[i];
                 }
-                float numSecondsRecorded = (float)bufferSize/(float)sampleRate;
-                float numCycles = numCrossing/2;
-                frequency = numCycles/numSecondsRecorded;
-                rms = (float)Math.sqrt(rms / buffer.length);
-                rms=(float)Math.round(rms*10000)/10000;
-                //-------------------------------------------------------------------------------
-                //--------------Custom Code Snippet for Calculating MFCC-------------------------
+
+                //Strongest Frequency by ZCR Calculation
+                float numSecondsRecorded = (float)4096 / (float)sampleRate;
+                float numCycles = numCrossing / 2;
+                frequencyZCR = numCycles / numSecondsRecorded;
+                frequencyZCR = (float)Math.round(frequencyZCR * 1000) / 1000;
+
+                //RMS Calculation
+                rms = (float)Math.sqrt(rms / 4096);
+                rms = (float)Math.round(rms * 10000) / 10000;
+
+                //FFT Calculation
+                fft.transform(curFrame, im);
+
+                //MFCC Calculation
                 MFCC mfcc = new MFCC(sampleRate);
                 try {
                     mfccFeatures = mfcc.process(mfccFeeder);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-                //-------------------------------------------------------------------------------
-                //--------------Custom Code Snippet for Calculating Spectral Flatness------------
-                //Provides a measure of the peakiness of the average spectrum.
-                double[] power_spectrum = new double[1024];
-                double[] magnitude_spectrum = new double[1024];
-                fft.transform(curFrame, im);
 
-                double geometricMean = 1;                   //Variable for Spectral Flatness
-                double arithmeticMean = 1;                  //Variable for Spectral Flatness
-                double total=0.0;                             //Variable for Spectral Rolloff
-                double average = 0;                         //For spectral variability
-                for(int band = 0; band < 1024; band++)
+                double[] power_spectrum = new double[4096];
+                double[] magnitude_spectrum = new double[4096];
+                double geometricMean = 1;
+                double arithmeticMean = 1;
+
+                for(int i = 0; i < 4096; i++)
                 {
-                    geometricMean += Math.log(curFrame[band])/1024;
-                    arithmeticMean += curFrame[band]/1024;
-                    power_spectrum[band]=Math.pow(curFrame[band], 2)+Math.pow(im[band], 2);     //Calculating Power Spectrum
-                    magnitude_spectrum[band]=power_spectrum[band]/1024;                         //Calculating Magnitude Spectrum
-                    total+=power_spectrum[band];
+                    //Spectral Flatness Intermediate Calculation
+                    geometricMean += Math.log(curFrame[i]) / 4096;
+                    arithmeticMean += curFrame[i] / 4096;
+
+                    //Power Spectrum Calculation
+                    power_spectrum[i] = (Math.pow(curFrame[i], 2) + Math.pow(im[i], 2)) / 4096;
+
+                    //Magnitude Spectrum Calculation
+                    magnitude_spectrum[i] = Math.sqrt(power_spectrum[i]) / 4096;
+
+                    //Spectral Variability Intermediate Calculation
+                    total += magnitude_spectrum[i];
                 }
-                average=(total/(1024*1024));
-                //Calculating Rolloff (https://github.com/dmcennis/jMir/blob/master/jMIR_2_4_developer/jAudio/src/jAudioFeatureExtractor/AudioFeatures/SpectralRolloffPoint.java)
-                double cutoff = 0.85;
-                double threshold = total * cutoff;
-                compactness=0.0;
-                total = 0.0;
-                int point = 0;
-                for (int bin = 0; bin < 1024; bin++) {
-                    total += power_spectrum[bin];
-                    if (total >= threshold) {
-                        point = bin;
-                        bin = power_spectrum.length;
-                    }
-                    //Calculating Compactness
-                    if(bin>0 && bin<1023)
-                    {
-                        if ((magnitude_spectrum[bin - 1] > 0.0) && (magnitude_spectrum[bin] > 0.0) && (magnitude_spectrum[bin + 1] > 0.0))
-                        {
-                            compactness += Math.abs(20.0 * Math.log(magnitude_spectrum[bin]) - 20.0 * (Math.log(magnitude_spectrum[bin - 1]) + Math.log(magnitude_spectrum[bin]) + Math.log(magnitude_spectrum[bin + 1])) / 3.0);
-                        }
-                    }
-                }
-                compactness=(double)Math.round(compactness*100)/100;
-                spectralRolloff = ((double) point) / 1024;
-                avgSpecFlatness = Math.exp(geometricMean)/arithmeticMean;
-                avgSpecFlatness=(double)Math.round(avgSpecFlatness*10000)/10000;
-                //-------------------------------------------------------------------------------
-                //Spectral Variability
+
+                //Spectral Flatness Calculation
+                avgSpecFlatness = Math.exp(geometricMean) / arithmeticMean;
+                avgSpecFlatness = (double)Math.round(avgSpecFlatness * 10000) / 10000;
+
+                //Spectral Variability, Centroid, and Compactness Calculation
+                average = (total / 4096);
                 double sum = 0.0;
-                for (i = 0; i < magnitude_spectrum.length; i++)
-                {
-                    double diff = ((double) magnitude_spectrum[i]) - average;
-                    sum = sum + diff * diff;
-                }
-                //This is a measure of the standard deviation of a signal's magnitude spectrum.
-                variability= Math.sqrt(sum / ((double) (magnitude_spectrum.length - 1)));
-                variability=(double) Math.round(variability*1000)/1000;
-                //--------------Custom Code Snippet for Calculating Spectral Centroid------------
-                //Provides a measure of the average spectral center of mass of a chunk's frames.
                 total = 0.0;
                 double weighted_total = 0.0;
-                for (int bin = 0; bin < power_spectrum.length; bin++)
+                compactness = 0.0;
+                for (int i = 0; i < 4096; i++)
                 {
-                    weighted_total += bin * power_spectrum[bin];
-                    total += power_spectrum[bin];
+                    //Spectral Variability Intermediate Calculation
+                    double diff = magnitude_spectrum[i] - average;
+                    sum = sum + (diff * diff);
+                    total += power_spectrum[i];
+                    weighted_total += i * power_spectrum[i];
+
+                    //Compactness Calculation
+                    if(i>0 && i<4095)
+                        if ((magnitude_spectrum[i - 1] > 0.0) && (magnitude_spectrum[i] > 0.0) && (magnitude_spectrum[i + 1] > 0.0))
+                            compactness += Math.abs(20.0 * Math.log(magnitude_spectrum[i]) - 20.0 * (Math.log(magnitude_spectrum[i - 1]) + Math.log(magnitude_spectrum[i]) + Math.log(magnitude_spectrum[i + 1])) / 3.0);
                 }
-                if(total != 0.0){
-                    avgSpecCentroid = weighted_total / total;
-                }else{
-                    avgSpecCentroid = 0.0;
+                //Spectral Variability Calculation
+                variability = Math.sqrt(sum / ((double) (4095)));
+                variability = (double) Math.round(variability * 1000) / 1000;
+
+                //Compactness Calculation
+                compactness = (double)Math.round(compactness * 1000) / 1000;
+
+                //Spectral Centroid Calculation
+                avgSpecCentroid = weighted_total / total;
+                avgSpecCentroid=(double)Math.round(avgSpecCentroid * 1000) / 1000;
+
+                // Strongest Frequency by Spectral Centroid Calculation
+                frequencySC=(avgSpecCentroid / 4096) * (sampleRate / 2.0);
+                frequencySC=(double)Math.round(frequencySC * 1000) / 1000;
+
+
+                //Spectral Rolloff Calculations
+                double cutoff = 0.85;
+                double threshold = total * cutoff;
+                total = 0.0;
+                int point = 0;
+                for (int i = 0; i < 4096; i++) {
+
+                    //Spectral Rolloff Intermediate Calculation
+                    total += power_spectrum[i];
+                    if (total >= threshold) {
+                        point = i;
+                        i = 4096;
+                    }
                 }
-                avgSpecCentroid=(double)Math.round(avgSpecCentroid*1000)/1000;
-                frequencySC=(avgSpecCentroid / power_spectrum.length) * (sampleRate / 2.0);
-                frequencySC=(double)Math.round(frequencySC*1000)/1000;
-                //-------------------------------------------------------------------------------
+
+                //Spectral Rolloff Calculation
+                spectralRolloff = ((double) point) / 4096;
+                spectralRolloff = (double)Math.round(spectralRolloff * 1000) / 1000;
+
+                /*
+                    END of Custom Calculations
+                */
+
+
                 if (nread < 0) {
                     throw new RuntimeException("error reading audio buffer");
                 } else {
@@ -402,30 +423,48 @@ public class SpeechRecognizer {
         ResultEvent(String hypothesis, boolean finalResult) {
 
             //----------------------Adding results to the hypothesis---------------------------
-            mfccAvg=0;
-            hypothesis+=("\nAmplitude: "+maxAmplitude+"\n");
-            hypothesis+="\nMFCC Features: \n";
-            for(int i=0; i<mfccFeatures.length; i++) {
-                hypothesis+="[";
-                for (int j = 1; j <= 12; j++) {
-                    hypothesis += ((double)Math.round(mfccFeatures[i][j]*100)/100) + " ";
-                    mfccAvg += mfccFeatures[i][j];
-                }
-                hypothesis+="]\n";
-            }
-            mfccAvg=mfccAvg/36;
-            mfccAvg = (double)Math.round(mfccAvg*100)/100;
-            hypothesis+=("MFCC Average: "+mfccAvg+"\n");
-            mfccAvgList.add((int)mfccAvg);
-            hypothesis+="Spectral Flatness: " +avgSpecFlatness+" \n";
-            hypothesis+="Spectral Centroid: " +avgSpecCentroid+" \n";
+
+            //Max Amplitude
+            hypothesis += ("\nMax Amplitude: "+maxAmplitude+"\n");
+
+            //Amplitude RMS
             hypothesis+="Amplitude RMS: " +rms+" \n";
+
+            //MFCC
+            mfccAvg = 0.0;
+            for(int i=0; i<15; i++)
+                for (int j = 1; j <= 12; j++)
+                    mfccAvg += mfccFeatures[i][j];
+
+            mfccAvg = mfccAvg / 84;
+            mfccAvg = (double)Math.round(mfccAvg * 1000) / 1000;
+            hypothesis += ("MFCC Average: "+mfccAvg+"\n");
+            mfccAvgList.add((int)mfccAvg);
+
+            //Spectral Flatness
+            hypothesis+="Spectral Flatness: " +avgSpecFlatness+" \n";
+
+            //Spectral Centroid
+            hypothesis+="Spectral Centroid: " +avgSpecCentroid+" \n";
+
+            //Strongest Frequency by Spectral Centroid
+            hypothesis+="Strongest Frequency (SC): " +frequencySC+" Hz\n";
+
+            //ZCR
             hypothesis+="Zero-Crossings: " +numCrossing+" \n";
-            hypothesis+="Strongest Frequency(ZCR): " +frequency+" Hz\n";
-            hypothesis+="Strongest Frequency(Centroid): " +frequencySC+" Hz\n";
+
+            //Strongest Frequency by ZCR
+            hypothesis+="Strongest Frequency (ZCR): " +frequencyZCR+" Hz\n";
+
+            //Spectral Rolloff Point
             hypothesis+="Spectral Rolloff Point: " +spectralRolloff+"\n";
+
+            //Compactness
             hypothesis+="Compactness: " +compactness+"\n";
+
+            //Spectral Variability
             hypothesis+="Spectral Variability: " +variability+"\n";
+
             //----------------------------------------------------------------------------------
             this.hypothesis = hypothesis;
             this.finalResult = finalResult;
