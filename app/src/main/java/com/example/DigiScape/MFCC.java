@@ -70,7 +70,7 @@ public class MFCC
      */
     public MFCC(float sampleRate) throws IllegalArgumentException
     {
-        this(sampleRate, 512, 20, true, 20.0, 16000.0, 40);
+        this(sampleRate, 512, 20, true, 20.0, 8000.0, 40);
     }
 
 
