@@ -296,27 +296,30 @@ public class SpeechRecognizer {
 
                 double[] power_spectrum = new double[4096];
                 double[] magnitude_spectrum = new double[4096];
-                double geometricMean = 1;
-                double arithmeticMean = 1;
+                double geometricMean = 0;
+                double arithmeticMean = 0;
 
                 for(int i = 0; i < 4096; i++)
                 {
-                    //Spectral Flatness Intermediate Calculation
-                    geometricMean += Math.log(curFrame[i]) / 4096;
-                    arithmeticMean += curFrame[i] / 4096;
-
                     //Power Spectrum Calculation
                     power_spectrum[i] = (Math.pow(curFrame[i], 2) + Math.pow(im[i], 2)) / 4096;
 
                     //Magnitude Spectrum Calculation
-                    magnitude_spectrum[i] = Math.sqrt(power_spectrum[i]) / 4096;
+                    magnitude_spectrum[i] = Math.sqrt(Math.pow(curFrame[i], 2) + Math.pow(im[i], 2)) / 4096;
 
                     //Spectral Variability Intermediate Calculation
                     total += magnitude_spectrum[i];
+
+                    //Spectral Flatness Intermediate Calculation
+                    geometricMean += Math.log(power_spectrum[i]);
+                    arithmeticMean += power_spectrum[i];
                 }
 
                 //Spectral Flatness Calculation
-                avgSpecFlatness = Math.exp(geometricMean) / arithmeticMean;
+                geometricMean = geometricMean / 4096;
+                geometricMean = Math.exp(geometricMean);
+                arithmeticMean = arithmeticMean/4096;
+                avgSpecFlatness = geometricMean / arithmeticMean;
                 avgSpecFlatness = (double)Math.round(avgSpecFlatness * 10000) / 10000;
 
                 //Spectral Variability, Centroid, and Compactness Calculation
