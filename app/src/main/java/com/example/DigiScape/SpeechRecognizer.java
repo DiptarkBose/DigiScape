@@ -294,12 +294,12 @@ public class SpeechRecognizer {
                     e.printStackTrace();
                 }
 
-                double[] power_spectrum = new double[4096];
-                double[] magnitude_spectrum = new double[4096];
+                double[] power_spectrum = new double[2048];
+                double[] magnitude_spectrum = new double[2048];
                 double geometricMean = 0;
                 double arithmeticMean = 0;
 
-                for(int i = 0; i < 4096; i++)
+                for(int i = 0; i < 2048; i++)
                 {
                     //Power Spectrum Calculation
                     power_spectrum[i] = (Math.pow(curFrame[i], 2) + Math.pow(im[i], 2)) / 4096;
@@ -316,19 +316,19 @@ public class SpeechRecognizer {
                 }
 
                 //Spectral Flatness Calculation
-                geometricMean = geometricMean / 4096;
+                geometricMean = geometricMean / 2048;
                 geometricMean = Math.exp(geometricMean);
-                arithmeticMean = arithmeticMean/4096;
+                arithmeticMean = arithmeticMean/2048;
                 avgSpecFlatness = geometricMean / arithmeticMean;
                 avgSpecFlatness = (double)Math.round(avgSpecFlatness * 10000) / 10000;
 
                 //Spectral Variability, Centroid, and Compactness Calculation
-                average = (total / 4096);
+                average = (total / 2048);
                 double sum = 0.0;
                 total = 0.0;
                 double weighted_total = 0.0;
                 compactness = 0.0;
-                for (int i = 0; i < 4096; i++)
+                for (int i = 0; i < 2048; i++)
                 {
                     //Spectral Variability Intermediate Calculation
                     double diff = magnitude_spectrum[i] - average;
@@ -337,12 +337,12 @@ public class SpeechRecognizer {
                     weighted_total += i * power_spectrum[i];
 
                     //Compactness Calculation
-                    if(i>0 && i<4095)
+                    if(i>0 && i<2047)
                         if ((magnitude_spectrum[i - 1] > 0.0) && (magnitude_spectrum[i] > 0.0) && (magnitude_spectrum[i + 1] > 0.0))
                             compactness += Math.abs(20.0 * Math.log(magnitude_spectrum[i]) - 20.0 * (Math.log(magnitude_spectrum[i - 1]) + Math.log(magnitude_spectrum[i]) + Math.log(magnitude_spectrum[i + 1])) / 3.0);
                 }
                 //Spectral Variability Calculation
-                variability = Math.sqrt(sum / ((double) (4095)));
+                variability = Math.sqrt(sum / ((double) (2047)));
                 variability = (double) Math.round(variability * 1000) / 1000;
 
                 //Compactness Calculation
@@ -353,7 +353,7 @@ public class SpeechRecognizer {
                 avgSpecCentroid=(double)Math.round(avgSpecCentroid * 1000) / 1000;
 
                 // Strongest Frequency by Spectral Centroid Calculation
-                frequencySC=(avgSpecCentroid / 4096) * (sampleRate / 2.0);
+                frequencySC=avgSpecCentroid*3.9;
                 frequencySC=(double)Math.round(frequencySC * 1000) / 1000;
 
 
@@ -362,18 +362,18 @@ public class SpeechRecognizer {
                 double threshold = total * cutoff;
                 total = 0.0;
                 int point = 0;
-                for (int i = 0; i < 4096; i++) {
+                for (int i = 0; i < 2048; i++) {
 
                     //Spectral Rolloff Intermediate Calculation
                     total += power_spectrum[i];
                     if (total >= threshold) {
                         point = i;
-                        i = 4096;
+                        i = 2048;
                     }
                 }
 
                 //Spectral Rolloff Calculation
-                spectralRolloff = ((double) point) / 4096;
+                spectralRolloff = ((double) point) / 2048;
                 spectralRolloff = (double)Math.round(spectralRolloff * 1000) / 1000;
 
                 /*
